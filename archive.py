@@ -4,6 +4,11 @@ from pathlib import Path
 from calibration.catalog import get_curve, register_curve
 from calibration.frozen import DirectCurve
 from calibration.records import ensure_curve_schema
+from networks.catalog import get_network, register_network
+from networks.frozen import CalibrationNetwork
+from networks.plans import build_network_report
+from networks.snapshots import NetworkReportSnapshot
+from networks.storage import ensure_network_schema
 from observations.intake import put_batch
 from observations.revisions import BatchRevision, RevisionRef, get_current_revision, get_revision
 from observations.storage import ensure_observation_schema
@@ -39,12 +44,19 @@ class Archive:
             ensure_curve_schema(self._connection)
             ensure_observation_schema(self._connection)
             ensure_report_schema(self._connection)
+            ensure_network_schema(self._connection)
 
     def register_curve(self, curve_id: str, source: str, target: str, knots: object) -> DirectCurve:
         return register_curve(self._connection, curve_id, source, target, knots)
 
     def get_curve(self, curve_id: str) -> DirectCurve:
         return get_curve(self._connection, curve_id)
+
+    def register_network(self, network_id: str, edges: object) -> str:
+        return register_network(self._connection, network_id, edges)
+
+    def get_network(self, network_id: str) -> CalibrationNetwork:
+        return get_network(self._connection, network_id)
 
     def put_batch(self, batch_id: str, scale: str, samples: object) -> RevisionRef:
         return put_batch(self._connection, batch_id, scale, samples)
@@ -58,6 +70,13 @@ class Archive:
     def build_report(self, report_id: str, batch_revision: RevisionRef, curve_id: str,
                      target: str, window: object) -> ReportSnapshot:
         return build_report(self._connection, report_id, batch_revision, curve_id, target, window)
+
+    def build_network_report(self, report_id: str, batch_revision: RevisionRef,
+                             network_id: str, target: str,
+                             window: object) -> NetworkReportSnapshot:
+        return build_network_report(
+            self._connection, report_id, batch_revision, network_id, target, window,
+        )
 
     def read_report(self, report_id: str) -> ReportSnapshot:
         return read_report(self._connection, report_id)

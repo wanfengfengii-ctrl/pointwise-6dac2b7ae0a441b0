@@ -53,3 +53,23 @@ with Archive('meter.sqlite') as archive:
 快照包含报告号、批次及修订、校准号、源和目标刻度、窗口、覆盖、总量及账项。账项包含正长时间范围、原相邻采样对、方向、原段号、原段两个结点及积分。原结点始终按登记的 A→B 坐标保存。JSON 的 `format_version` 为 1，`coverage`、`total`、账项的 `start_s`、`end_s`、`integral`、读数与结点坐标都用 `[分子, 正分母]`。原采样时刻和请求窗口保留整数秒。离库核账时，先按原采样对在账项两端插值，反向账项交换原结点坐标角色，再按该原段计算两个端值和梯形面积。按时间核对账项覆盖与面积之和。读取和导出直接使用持久化快照。
 
 回归覆盖登记重放及冲突、无效更正、精确正反向切分、跨窗插值、空覆盖、引用与方向错误、写入回滚与同号重试、固定绑定重放、重开与重复初始化，以及独立离库复算。`tests/test_intake.py`、`tests/test_processing.py`、`tests/test_publication.py`、`tests/test_review.py` 随完整发现命令运行。
+
+## 固定校准网络
+
+相邻刻度的标定边可组成换算路线，规范见 `NETWORK.md`。网络先通过全量程一致性核验才允许登记：同一连通分量内任意源、目标刻度的所有路线（含环路与恒等路线）在 `[0,1]` 上须逐点给出相同的有理数换算，矛盾网络整次 `ValueError` 拒绝。
+
+```python
+network_id = archive.register_network('net', [
+    ('e01', 'A', 'B', [(0, 0), ('1/2', '1/4'), (1, 1)]),
+    ('e02', 'B', 'C', [(0, 0), ('1/2', '3/4'), (1, 1)]),
+])
+revision = archive.put_batch('day', 'A', [(0, 0), (1, 1)])
+report = archive.build_network_report('sheet', revision, network_id, 'C', (0, 1))
+```
+
+- `register_network(network_id, edges)` 的每条边为 `(edge_id, source, target, knots)`，边 ID 网络内唯一；允许平行边、环与互不相连的分量。同号同内容重放，同号异内容抛 `ValueError`，登记不改已有直接校准，网络与直接校准各自具名。
+- `build_network_report` 选边数最少的路线，并列按 `(edge_id, direction)` 序列取字典序最小（`forward` 在 `reverse` 前）；同刻度用空路线，异刻度不可达抛 `ValueError`，缺网络或修订抛 `KeyError`。
+- 账项按所选路线任一原边的实际切换拆账，保留原采样对与每步原段路径（`edge_id`、`direction`、`segment_index`、登记方向的两个原结点 `knots`）；抵消仍保留每步来源。全程 `Fraction` 精确累计。
+- 网络报告与直接报告共用报告号，绑定含报告种类；同号同绑定重放快照，异绑定（含两类报告之间）抛 `ValueError`。更正、容器修改与重开不改变旧账，读取不重算。
+- `export_report` 对网络报告给出 `format_version: 2` 的确定性 JSON：`binding` 以 `network_id` 取代 `curve_id`，顶层增加 `route`，每笔以 `path` 数组取代单边四字段。仅用该 JSON 即可离库复核逐笔积分、覆盖与总量，独立核账在 `review/network_audit.py`。
+- 网络回归在 `tests/test_network.py`，手算输入与期望在 `network_examples.py`；交接不变量见 `HANDOFF.md`。

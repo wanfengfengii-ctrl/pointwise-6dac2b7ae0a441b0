@@ -11,6 +11,14 @@ class ReportBinding:
     window: tuple[int, int]
 
 
+@dataclass(frozen=True, slots=True)
+class NetworkBinding:
+    revision: RevisionRef
+    network_id: str
+    target: str
+    window: tuple[int, int]
+
+
 def require_same_binding(report_id: str, stored: ReportBinding, requested: ReportBinding) -> None:
     if stored != requested:
         raise ValueError(f'report {report_id!r} has a different fixed binding')

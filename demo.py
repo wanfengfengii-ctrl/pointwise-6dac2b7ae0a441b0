@@ -4,6 +4,62 @@ from fractions import Fraction
 from pathlib import Path
 
 from archive import Archive
+from network_examples import CASES
+from review.network_audit import audit_network_export
+
+
+def run_network_demo() -> None:
+    case = next(item for item in CASES if item['name'] == 'cancellation')
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / 'network.sqlite'
+        with Archive(path) as archive:
+            archive.register_network('net', case['edges'])
+            original_ref = archive.put_batch('day', case['source'], case['samples'])
+            original = archive.build_network_report(
+                'cancellation', original_ref, 'net', case['target'], case['window'],
+            )
+            correction_ref = archive.put_batch('day', case['source'], [(0, 0), (1, 0)])
+            archive.build_network_report(
+                'cancellation-corrected', correction_ref, 'net', case['target'], case['window'],
+            )
+        with Archive(path) as archive:
+            reopened = archive.read_report('cancellation')
+            exported = archive.export_report('cancellation')
+            corrected_export = archive.export_report('cancellation-corrected')
+            if reopened != original:
+                raise RuntimeError('network snapshot changed after reopening the archive')
+            audit = audit_network_export(json.loads(exported))
+            if (audit['coverage'], audit['total']) != (reopened.coverage, reopened.total):
+                raise RuntimeError('independent network audit does not reconcile')
+    ledger = [
+        {
+            'start_s': str(item.start),
+            'end_s': str(item.end),
+            'path': [
+                {
+                    'edge_id': step.edge_id,
+                    'direction': step.direction,
+                    'segment_index': step.segment_index,
+                    'knots': [[str(x), str(y)] for x, y in step.knots],
+                }
+                for step in item.path
+            ],
+            'integral': str(item.integral),
+        }
+        for item in original.contributions
+    ]
+    print('POINTWISE_NETWORK_SCENARIO ' + json.dumps({
+        'case_id': 'cancellation',
+        'route': list(original.route),
+        'ledger': ledger,
+        'coverage': str(original.coverage),
+        'total': str(original.total),
+        'audit_total': str(audit['total']),
+        'reopened_total': str(reopened.total),
+        'corrected_total': str(Fraction(*json.loads(corrected_export)['total'])),
+    }, separators=(',', ':')))
+    print(exported)
+    print(corrected_export)
 
 
 def main() -> None:
@@ -67,6 +123,7 @@ def main() -> None:
     }, separators=(',', ':')))
     print(delivered)
     print(delivered_new)
+    run_network_demo()
 
 
 if __name__ == '__main__':

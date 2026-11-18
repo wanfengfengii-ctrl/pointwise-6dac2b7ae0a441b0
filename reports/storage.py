@@ -20,6 +20,12 @@ class ReportSnapshot:
 
 def ensure_report_schema(connection: sqlite3.Connection) -> None:
     connection.execute('''
+        CREATE TABLE IF NOT EXISTS report_registry (
+            report_id TEXT PRIMARY KEY NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('direct', 'network'))
+        )
+    ''')
+    connection.execute('''
         CREATE TABLE IF NOT EXISTS reports (
             report_id TEXT PRIMARY KEY NOT NULL,
             batch_id TEXT NOT NULL,
@@ -34,6 +40,10 @@ def ensure_report_schema(connection: sqlite3.Connection) -> None:
             FOREIGN KEY (batch_id, revision) REFERENCES batch_revisions (batch_id, revision)
         )
     ''')
+    connection.execute(
+        'INSERT OR IGNORE INTO report_registry (report_id, kind) '
+        "SELECT report_id, 'direct' FROM reports"
+    )
     connection.execute('''
         CREATE TABLE IF NOT EXISTS report_contributions (
             report_id TEXT NOT NULL REFERENCES reports(report_id),
